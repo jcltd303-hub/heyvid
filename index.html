@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HeyGen Video Studio</title>
+<style>
+  :root { --bg:#fff; --card:#f6f7f9; --text:#14161a; --muted:#5f6670; --border:#d9dde3; --accent:#5b4bff; --accent-text:#fff; --err:#c62828; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1115; --card:#181b21; --text:#eceef2; --muted:#9aa3af; --border:#2a2f38; --accent:#7a6dff; --err:#ff6b6b; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:1.6rem; margin:0 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-weight:600; font-size:.9rem; margin:12px 0 4px; }
+  label:first-child { margin-top:0; }
+  input[type=text], input[type=password], input[type=number], select, textarea {
+    width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit;
+  }
+  textarea { min-height:110px; resize:vertical; }
+  .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+  .hint { color:var(--muted); font-size:.8rem; margin-top:4px; }
+  button { background:var(--accent); color:var(--accent-text); border:0; border-radius:8px; padding:12px 18px; font:inherit; font-weight:600; cursor:pointer; }
+  button.secondary { background:transparent; color:var(--text); border:1px solid var(--border); padding:8px 12px; font-weight:500; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .thumbs { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .thumb { position:relative; width:84px; height:84px; border-radius:8px; overflow:hidden; border:1px solid var(--border); }
+  .thumb img { width:100%; height:100%; object-fit:cover; }
+  .thumb button { position:absolute; top:2px; right:2px; padding:0 6px; border-radius:50%; font-size:.8rem; line-height:20px; background:rgba(0,0,0,.65); color:#fff; }
+  #status { white-space:pre-wrap; font-size:.9rem; }
+  #status.err { color:var(--err); }
+  video { width:100%; border-radius:8px; margin-top:12px; background:#000; }
+  .inline { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .inline input[type=checkbox] { width:auto; }
+  .inline label { margin:0; font-weight:400; }
+  details summary { cursor:pointer; font-weight:600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>HeyGen Video Studio</h1>
+  <p class="sub">Generate video with <code>heygen/heygen-video-1</code> through the OpenRouter Video API.</p>
+
+  <div class="card">
+    <label for="key">OpenRouter API key</label>
+    <input id="key" type="password" placeholder="sk-or-v1-..." autocomplete="off">
+    <div class="inline" style="margin-top:8px">
+      <input type="checkbox" id="remember"><label for="remember">Remember on this device (localStorage)</label>
+    </div>
+    <div class="hint">Your key stays in your browser and is sent only to openrouter.ai. Use a key with a spend limit.</div>
+  </div>
+
+  <div class="card">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" placeholder="Describe the video you want..."></textarea>
+    <div class="hint">Optional if you upload a first-frame image.</div>
+
+    <div class="row">
+      <div>
+        <label for="duration">Duration</label>
+        <select id="duration"></select>
+      </div>
+      <div>
+        <label for="resolution">Resolution</label>
+        <select id="resolution">
+          <option value="">Default</option><option>480p</option><option>768p</option><option>2K</option>
+        </select>
+      </div>
+      <div>
+        <label for="aspect">Aspect ratio</label>
+        <select id="aspect">
+          <option value="">Default</option><option>16:9</option><option>21:9</option><option>4:3</option><option>1:1</option><option>3:4</option><option>9:16</option>
+        </select>
+      </div>
+      <div>
+        <label for="seed">Seed</label>
+        <input id="seed" type="number" step="1" placeholder="optional">
+      </div>
+    </div>
+
+    <label for="first">First-frame image (image to video)</label>
+    <input id="first" type="file" accept="image/*">
+    <div class="thumbs" id="firstThumb"></div>
+
+    <label for="refs">Reference images (guide the generation)</label>
+    <input id="refs" type="file" accept="image/*" multiple>
+    <div class="thumbs" id="refThumbs"></div>
+
+    <details style="margin-top:14px">
+      <summary>Advanced</summary>
+      <label for="firstUrl">First-frame image URL (https)</label>
+      <input id="firstUrl" type="text" placeholder="https://...">
+      <label for="refUrls">Reference image URLs (one per line)</label>
+      <textarea id="refUrls" style="min-height:70px" placeholder="https://..."></textarea>
+    </details>
+
+    <div style="margin-top:16px" class="inline">
+      <button id="go">Generate video</button>
+      <button id="cancel" class="secondary" style="display:none">Stop polling</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="status">Ready.</div>
+    <div id="result"></div>
+  </div>
+</main>
+
+<script>
+const API = "https://openrouter.ai/api/v1";
+const $ = id => document.getElementById(id);
+let firstData = null;
+let refData = [];
+let stopFlag = false;
+
+for (let i = 5; i <= 15; i++) $("duration").add(new Option(i + " s", i));
+
+// Saved key
+try {
+  const saved = localStorage.getItem("or_key");
+  if (saved) { $("key").value = saved; $("remember").checked = true; }
+} catch (e) {}
+
+const toDataURL = f => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result);
+  r.onerror = () => rej(new Error("Could not read " + f.name));
+  r.readAsDataURL(f);
+});
+
+function thumb(container, src, onRemove) {
+  const d = document.createElement("div");
+  d.className = "thumb";
+  d.innerHTML = '<img alt=""><button title="Remove">×</button>';
+  d.querySelector("img").src = src;
+  d.querySelector("button").onclick = () => { onRemove(); d.remove(); };
+  container.appendChild(d);
+}
+
+$("first").addEventListener("change", async e => {
+  $("firstThumb").innerHTML = ""; firstData = null;
+  const f = e.target.files[0];
+  if (!f) return;
+  firstData = await toDataURL(f);
+  thumb($("firstThumb"), firstData, () => { firstData = null; $("first").value = ""; });
+});
+
+$("refs").addEventListener("change", async e => {
+  for (const f of e.target.files) {
+    const d = await toDataURL(f);
+    refData.push(d);
+    thumb($("refThumbs"), d, () => { refData = refData.filter(x => x !== d); });
+  }
+  $("refs").value = "";
+});
+
+function setStatus(msg, isErr) {
+  const s = $("status");
+  s.textContent = msg;
+  s.className = isErr ? "err" : "";
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { "Authorization": "Bearer " + $("key").value.trim(), ...(opts.headers || {}) }
+  });
+  return res;
+}
+
+async function errMsg(res) {
+  try { const j = await res.json(); return j.error?.message || JSON.stringify(j); }
+  catch { return res.statusText; }
+}
+
+$("cancel").onclick = () => { stopFlag = true; };
+
+$("go").onclick = async () => {
+  const key = $("key").value.trim();
+  if (!key) return setStatus("Enter your OpenRouter API key.", true);
+
+  try {
+    if ($("remember").checked) localStorage.setItem("or_key", key);
+    else localStorage.removeItem("or_key");
+  } catch (e) {}
+
+  const prompt = $("prompt").value.trim();
+  const firstUrl = $("firstUrl").value.trim();
+  const firstImg = firstData || firstUrl;
+  if (!prompt && !firstImg) return setStatus("Add a prompt or a first-frame image.", true);
+
+  const body = { model: "heygen/heygen-video-1" };
+  if (prompt) body.prompt = prompt;
+  body.duration = Number($("duration").value);
+  if ($("resolution").value) body.resolution = $("resolution").value;
+  if ($("aspect").value) body.aspect_ratio = $("aspect").value;
+  if ($("seed").value !== "") body.seed = parseInt($("seed").value, 10);
+  if (firstImg) body.frame_images = [{ type: "image_url", image_url: { url: firstImg }, frame_type: "first_frame" }];
+
+  const refs = [...refData, ...$("refUrls").value.split("\n").map(s => s.trim()).filter(Boolean)];
+  if (refs.length) body.input_references = refs.map(url => ({ type: "image_url", image_url: { url } }));
+
+  $("go").disabled = true; $("cancel").style.display = ""; stopFlag = false;
+  $("result").innerHTML = "";
+  setStatus("Submitting job...");
+
+  try {
+    const res = await api("/videos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(res.status + " " + await errMsg(res));
+    const job = await res.json();
+    const id = job.id;
+    let delay = 3000, n = 0;
+
+    while (!stopFlag) {
+      await new Promise(r => setTimeout(r, delay));
+      n++;
+      const p = await api("/videos/" + encodeURIComponent(id));
+      if (!p.ok) throw new Error(p.status + " " + await errMsg(p));
+      const j = await p.json();
+      setStatus("Job " + id + "\nStatus: " + j.status + " (check " + n + ")");
+      if (j.status === "completed") {
+        setStatus("Done. Downloading video...");
+        const c = await api("/videos/" + encodeURIComponent(id) + "/content");
+        if (!c.ok) throw new Error(c.status + " " + await errMsg(c));
+        const blob = await c.blob();
+        const url = URL.createObjectURL(blob);
+        const cost = j.usage?.cost != null ? " Cost: $" + j.usage.cost : "";
+        setStatus("Completed." + cost);
+        $("result").innerHTML = '<video controls autoplay loop></video><div class="inline" style="margin-top:10px"><a id="dl" download="heygen-' + id + '.mp4"><button class="secondary">Download MP4</button></a></div>';
+        $("result").querySelector("video").src = url;
+        $("dl").href = url;
+        break;
+      }
+      if (["failed", "cancelled", "expired"].includes(j.status)) {
+        throw new Error("Job " + j.status + (j.error ? ": " + (j.error.message || j.error) : ""));
+      }
+      delay = Math.min(delay + 1000, 8000);
+    }
+    if (stopFlag) setStatus("Stopped polling. Job " + id + " may still finish on OpenRouter.");
+  } catch (e) {
+    setStatus(e.message || String(e), true);
+  } finally {
+    $("go").disabled = false; $("cancel").style.display = "none";
+  }
+};
+</script>
+</body>
+</html>
