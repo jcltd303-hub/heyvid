@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HeyGen Video Studio</title>
+<title>OpenRouter Video Studio</title>
 <style>
   :root { --bg:#fff; --card:#f6f7f9; --text:#14161a; --muted:#5f6670; --border:#d9dde3; --accent:#5b4bff; --accent-text:#fff; --err:#c62828; }
   @media (prefers-color-scheme: dark) {
@@ -11,7 +11,7 @@
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
-  main { max-width:760px; margin:0 auto; padding:24px 16px 64px; }
+  main { max-width:780px; margin:0 auto; padding:24px 16px 64px; }
   h1 { font-size:1.6rem; margin:0 0 4px; }
   p.sub { color:var(--muted); margin:0 0 20px; }
   .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:16px; }
@@ -37,12 +37,14 @@
   .inline input[type=checkbox] { width:auto; }
   .inline label { margin:0; font-weight:400; }
   details summary { cursor:pointer; font-weight:600; }
+  #modelInfo { color:var(--muted); font-size:.85rem; margin-top:6px; }
+  .hidden { display:none; }
 </style>
 </head>
 <body>
 <main>
-  <h1>HeyGen Video Studio</h1>
-  <p class="sub">Generate video with <code>heygen/heygen-video-1</code> through the OpenRouter Video API.</p>
+  <h1>OpenRouter Video Studio</h1>
+  <p class="sub">Pick any OpenRouter video model. The form adapts to what that model supports.</p>
 
   <div class="card">
     <label for="key">OpenRouter API key</label>
@@ -50,56 +52,60 @@
     <div class="inline" style="margin-top:8px">
       <input type="checkbox" id="remember"><label for="remember">Remember on this device (localStorage)</label>
     </div>
-    <div class="hint">Your key stays in your browser and is sent only to openrouter.ai. Use a key with a spend limit.</div>
+    <div class="hint">Stays in your browser and is sent only to openrouter.ai. Use a key with a spend limit.</div>
   </div>
 
   <div class="card">
+    <label for="model">Model</label>
+    <select id="model"><option>Loading models...</option></select>
+    <div id="modelInfo"></div>
+    <div class="hint">Lists generation models (text, image, and reference to video). Editing and upscaling models need a source video and aren't included. Each model's provider applies its own content policy.</div>
+
     <label for="prompt">Prompt</label>
     <textarea id="prompt" placeholder="Describe the video you want..."></textarea>
-    <div class="hint">Optional if you upload a first-frame image.</div>
 
     <div class="row">
-      <div>
-        <label for="duration">Duration</label>
-        <select id="duration"></select>
-      </div>
-      <div>
-        <label for="resolution">Resolution</label>
-        <select id="resolution">
-          <option value="">Default</option><option>480p</option><option>768p</option><option>2K</option>
-        </select>
-      </div>
-      <div>
-        <label for="aspect">Aspect ratio</label>
-        <select id="aspect">
-          <option value="">Default</option><option>16:9</option><option>21:9</option><option>4:3</option><option>1:1</option><option>3:4</option><option>9:16</option>
-        </select>
-      </div>
-      <div>
-        <label for="seed">Seed</label>
-        <input id="seed" type="number" step="1" placeholder="optional">
+      <div id="wDuration"><label for="duration">Duration</label><select id="duration"></select></div>
+      <div id="wRes"><label for="resolution">Resolution</label><select id="resolution"></select></div>
+      <div id="wAspect"><label for="aspect">Aspect ratio</label><select id="aspect"></select></div>
+      <div id="wSeed"><label for="seed">Seed</label><input id="seed" type="number" step="1" placeholder="optional"></div>
+      <div id="wAudio"><label for="audio">Audio</label>
+        <select id="audio"><option value="">Default</option><option value="true">On</option><option value="false">Off</option></select>
       </div>
     </div>
 
-    <label for="first">First-frame image (image to video)</label>
-    <input id="first" type="file" accept="image/*">
-    <div class="thumbs" id="firstThumb"></div>
-
-    <label for="refs">Reference images (guide the generation)</label>
-    <input id="refs" type="file" accept="image/*" multiple>
-    <div class="thumbs" id="refThumbs"></div>
+    <div id="wFirst">
+      <label for="first">First-frame image</label>
+      <input id="first" type="file" accept="image/*">
+      <div class="thumbs" id="firstThumb"></div>
+    </div>
+    <div id="wLast">
+      <label for="last">Last-frame image</label>
+      <input id="last" type="file" accept="image/*">
+      <div class="thumbs" id="lastThumb"></div>
+    </div>
+    <div>
+      <label for="refs">Reference images (if the model supports them)</label>
+      <input id="refs" type="file" accept="image/*" multiple>
+      <div class="thumbs" id="refThumbs"></div>
+    </div>
 
     <details style="margin-top:14px">
       <summary>Advanced</summary>
       <label for="firstUrl">First-frame image URL (https)</label>
       <input id="firstUrl" type="text" placeholder="https://...">
+      <label for="lastUrl">Last-frame image URL (https)</label>
+      <input id="lastUrl" type="text" placeholder="https://...">
       <label for="refUrls">Reference image URLs (one per line)</label>
       <textarea id="refUrls" style="min-height:70px" placeholder="https://..."></textarea>
+      <label for="extra">Extra request fields (JSON, merged into the request)</label>
+      <textarea id="extra" style="min-height:70px" placeholder='{"provider": {"options": {}}}'></textarea>
+      <div class="hint" id="passthrough"></div>
     </details>
 
     <div style="margin-top:16px" class="inline">
       <button id="go">Generate video</button>
-      <button id="cancel" class="secondary" style="display:none">Stop polling</button>
+      <button id="cancel" class="secondary hidden">Stop polling</button>
     </div>
   </div>
 
@@ -112,17 +118,67 @@
 <script>
 const API = "https://openrouter.ai/api/v1";
 const $ = id => document.getElementById(id);
-let firstData = null;
-let refData = [];
+let models = [];
+let firstData = null, lastData = null, refData = [];
 let stopFlag = false;
 
-for (let i = 5; i <= 15; i++) $("duration").add(new Option(i + " s", i));
-
-// Saved key
 try {
   const saved = localStorage.getItem("or_key");
   if (saved) { $("key").value = saved; $("remember").checked = true; }
 } catch (e) {}
+
+function fill(sel, vals, suffix) {
+  sel.innerHTML = "";
+  sel.add(new Option("Default", ""));
+  (vals || []).forEach(v => sel.add(new Option(v + (suffix || ""), v)));
+}
+
+async function loadModels() {
+  try {
+    const r = await fetch(API + "/videos/models");
+    if (!r.ok) throw new Error(r.status + " " + r.statusText);
+    const j = await r.json();
+    models = (j.data || []).filter(m => m.supported_durations || m.supported_frame_images);
+    models = models.filter(m => m.id !== "heygen/avatar-iv");
+    const sel = $("model");
+    sel.innerHTML = "";
+    models.forEach(m => sel.add(new Option(m.name, m.id)));
+    const saved = (() => { try { return localStorage.getItem("or_model"); } catch (e) { return null; } })();
+    if (saved && models.some(m => m.id === saved)) sel.value = saved;
+    applyModel();
+  } catch (e) {
+    $("model").innerHTML = "<option>Could not load models</option>";
+    setStatus("Could not load the model list: " + e.message, true);
+  }
+}
+
+function current() { return models.find(m => m.id === $("model").value); }
+
+function applyModel() {
+  const m = current();
+  if (!m) return;
+  try { localStorage.setItem("or_model", m.id); } catch (e) {}
+  fill($("duration"), m.supported_durations, " s");
+  fill($("resolution"), m.supported_resolutions);
+  fill($("aspect"), m.supported_aspect_ratios);
+  $("wDuration").classList.toggle("hidden", !m.supported_durations);
+  $("wRes").classList.toggle("hidden", !m.supported_resolutions);
+  $("wAspect").classList.toggle("hidden", !m.supported_aspect_ratios);
+  $("wSeed").classList.toggle("hidden", !m.seed);
+  $("wAudio").classList.toggle("hidden", m.generate_audio == null);
+  const frames = m.supported_frame_images || [];
+  $("wFirst").classList.toggle("hidden", !frames.includes("first_frame"));
+  $("wLast").classList.toggle("hidden", !frames.includes("last_frame"));
+  const bits = [];
+  if (m.supported_durations) bits.push(m.supported_durations[0] + "–" + Math.max(...m.supported_durations) + " s");
+  if (m.supported_resolutions) bits.push(m.supported_resolutions.join(" / "));
+  if (m.generate_audio) bits.push("audio");
+  $("modelInfo").textContent = bits.join(" · ") + (m.description ? "\n" + m.description : "");
+  $("modelInfo").style.whiteSpace = "pre-wrap";
+  const p = m.allowed_passthrough_parameters || [];
+  $("passthrough").textContent = p.length ? "Model-specific parameters it accepts: " + p.join(", ") : "";
+}
+$("model").addEventListener("change", applyModel);
 
 const toDataURL = f => new Promise((res, rej) => {
   const r = new FileReader();
@@ -140,13 +196,18 @@ function thumb(container, src, onRemove) {
   container.appendChild(d);
 }
 
-$("first").addEventListener("change", async e => {
-  $("firstThumb").innerHTML = ""; firstData = null;
-  const f = e.target.files[0];
-  if (!f) return;
-  firstData = await toDataURL(f);
-  thumb($("firstThumb"), firstData, () => { firstData = null; $("first").value = ""; });
-});
+function singleUpload(inputId, thumbId, setter) {
+  $(inputId).addEventListener("change", async e => {
+    $(thumbId).innerHTML = ""; setter(null);
+    const f = e.target.files[0];
+    if (!f) return;
+    const d = await toDataURL(f);
+    setter(d);
+    thumb($(thumbId), d, () => { setter(null); $(inputId).value = ""; });
+  });
+}
+singleUpload("first", "firstThumb", v => firstData = v);
+singleUpload("last", "lastThumb", v => lastData = v);
 
 $("refs").addEventListener("change", async e => {
   for (const f of e.target.files) {
@@ -158,17 +219,15 @@ $("refs").addEventListener("change", async e => {
 });
 
 function setStatus(msg, isErr) {
-  const s = $("status");
-  s.textContent = msg;
-  s.className = isErr ? "err" : "";
+  $("status").textContent = msg;
+  $("status").className = isErr ? "err" : "";
 }
 
-async function api(path, opts = {}) {
-  const res = await fetch(API + path, {
+function api(path, opts = {}) {
+  return fetch(API + path, {
     ...opts,
     headers: { "Authorization": "Bearer " + $("key").value.trim(), ...(opts.headers || {}) }
   });
-  return res;
 }
 
 async function errMsg(res) {
@@ -180,7 +239,9 @@ $("cancel").onclick = () => { stopFlag = true; };
 
 $("go").onclick = async () => {
   const key = $("key").value.trim();
+  const m = current();
   if (!key) return setStatus("Enter your OpenRouter API key.", true);
+  if (!m) return setStatus("Pick a model.", true);
 
   try {
     if ($("remember").checked) localStorage.setItem("or_key", key);
@@ -188,22 +249,31 @@ $("go").onclick = async () => {
   } catch (e) {}
 
   const prompt = $("prompt").value.trim();
-  const firstUrl = $("firstUrl").value.trim();
-  const firstImg = firstData || firstUrl;
-  if (!prompt && !firstImg) return setStatus("Add a prompt or a first-frame image.", true);
+  const first = firstData || $("firstUrl").value.trim();
+  const last = lastData || $("lastUrl").value.trim();
+  const refs = [...refData, ...$("refUrls").value.split("\n").map(s => s.trim()).filter(Boolean)];
+  if (!prompt && !first) return setStatus("Add a prompt or a first-frame image.", true);
 
-  const body = { model: "heygen/heygen-video-1" };
+  const body = { model: m.id };
   if (prompt) body.prompt = prompt;
-  body.duration = Number($("duration").value);
+  if ($("duration").value) body.duration = Number($("duration").value);
   if ($("resolution").value) body.resolution = $("resolution").value;
   if ($("aspect").value) body.aspect_ratio = $("aspect").value;
-  if ($("seed").value !== "") body.seed = parseInt($("seed").value, 10);
-  if (firstImg) body.frame_images = [{ type: "image_url", image_url: { url: firstImg }, frame_type: "first_frame" }];
-
-  const refs = [...refData, ...$("refUrls").value.split("\n").map(s => s.trim()).filter(Boolean)];
+  if (m.seed && $("seed").value !== "") body.seed = parseInt($("seed").value, 10);
+  if (m.generate_audio != null && $("audio").value !== "") body.generate_audio = $("audio").value === "true";
+  const frames = [];
+  if (first) frames.push({ type: "image_url", image_url: { url: first }, frame_type: "first_frame" });
+  if (last) frames.push({ type: "image_url", image_url: { url: last }, frame_type: "last_frame" });
+  if (frames.length) body.frame_images = frames;
   if (refs.length) body.input_references = refs.map(url => ({ type: "image_url", image_url: { url } }));
 
-  $("go").disabled = true; $("cancel").style.display = ""; stopFlag = false;
+  const extra = $("extra").value.trim();
+  if (extra) {
+    try { Object.assign(body, JSON.parse(extra)); }
+    catch (e) { return setStatus("Extra JSON is invalid: " + e.message, true); }
+  }
+
+  $("go").disabled = true; $("cancel").classList.remove("hidden"); stopFlag = false;
   $("result").innerHTML = "";
   setStatus("Submitting job...");
 
@@ -229,11 +299,10 @@ $("go").onclick = async () => {
         setStatus("Done. Downloading video...");
         const c = await api("/videos/" + encodeURIComponent(id) + "/content");
         if (!c.ok) throw new Error(c.status + " " + await errMsg(c));
-        const blob = await c.blob();
-        const url = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(await c.blob());
         const cost = j.usage?.cost != null ? " Cost: $" + j.usage.cost : "";
         setStatus("Completed." + cost);
-        $("result").innerHTML = '<video controls autoplay loop></video><div class="inline" style="margin-top:10px"><a id="dl" download="heygen-' + id + '.mp4"><button class="secondary">Download MP4</button></a></div>';
+        $("result").innerHTML = '<video controls autoplay loop></video><div class="inline" style="margin-top:10px"><a id="dl" download="video-' + id + '.mp4"><button class="secondary">Download MP4</button></a></div>';
         $("result").querySelector("video").src = url;
         $("dl").href = url;
         break;
@@ -247,9 +316,11 @@ $("go").onclick = async () => {
   } catch (e) {
     setStatus(e.message || String(e), true);
   } finally {
-    $("go").disabled = false; $("cancel").style.display = "none";
+    $("go").disabled = false; $("cancel").classList.add("hidden");
   }
 };
+
+loadModels();
 </script>
 </body>
 </html>
